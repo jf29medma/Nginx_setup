@@ -1,0 +1,50 @@
+services:
+  nginx-proxy:
+    image: nginxproxy/nginx-proxy:alpine
+    container_name: nginx-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # safer default unless you actually have a proxy in front of this one
+      TRUST_DOWNSTREAM_PROXY: "false"
+      ENABLE_IPV6: "true"
+    volumes:
+      - nginx-certs:/etc/nginx/certs
+      - nginx-vhost:/etc/nginx/vhost.d
+      - nginx-html:/usr/share/nginx/html
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    labels:
+      - com.github.nginx-proxy.nginx=true 
+    restart: unless-stopped
+    networks:
+      - proxy-net
+
+  acme-companion:
+    image: nginxproxy/acme-companion
+    container_name: acme-companion
+    depends_on:
+      - nginx-proxy
+    environment:
+      # Change this to your real email – used for Let's Encrypt notifications
+      DEFAULT_EMAIL: "${DEFAULT_EMAIL}"
+      NGINX_PROXY_CONTAINER: nginx-proxy 
+    volumes:
+      - nginx-certs:/etc/nginx/certs
+      - acme-data:/etc/acme.sh
+      - nginx-vhost:/etc/nginx/vhost.d
+      - nginx-html:/usr/share/nginx/html
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+    networks:
+      - proxy-net
+
+volumes:
+  nginx-certs:
+  nginx-vhost:
+  nginx-html:
+  acme-data:
+
+networks:
+  proxy-net:
+    external: true

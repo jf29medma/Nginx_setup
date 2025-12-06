@@ -1,48 +1,49 @@
 services:
-  traefik:
-    image: traefik:v3.0
-    container_name: traefik
-    command:
-      # Docker provider
-      - "--providers.docker=true"
-      - "--providers.docker.network=proxy-net"
-      - "--providers.docker.exposedbydefault=false"
-
-      # EntryPoints
-      - "--entrypoints.web.address=:80"
-      - "--entrypoints.websecure.address=:443"
-
-      # ACME / Let's Encrypt mit Cloudflare DNS-01
-      - "--certificatesresolvers.letsencrypt.acme.email=${DEFAULT_EMAIL}"
-      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
-      - "--certificatesresolvers.letsencrypt.acme.dnschallenge.provider=cloudflare"
-      # Optional: explizite Resolver
-      - "--certificatesresolvers.letsencrypt.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53"
-
-      # (Optional) Dashboard nur intern, z.B. auf :8080
-      - "--api.dashboard=true"
-      - "--entrypoints.traefik.address=:8080"
-
+  nginx-proxy:
+    image: nginxproxy/nginx-proxy:alpine
+    container_name: nginx-proxy-dashboard
     ports:
       - "80:80"
       - "443:443"
-      # Dashboard optional
-      - "8080:8080"
-    env_file:
-      - .env
     environment:
-      # Wird von lego/Traefik für Cloudflare DNS genutzt
-      - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN}
+      # safer default unless you actually have a proxy in front of this one
+      TRUST_DOWNSTREAM_PROXY: "false"
     volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock:ro"
-      - "traefik-letsencrypt:/letsencrypt"
-    networks:
-      - proxy-net
+      - nginx-certs:/etc/nginx/certs
+      - nginx-vhost:/etc/nginx/vhost.d
+      - nginx-html:/usr/share/nginx/html
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    labels:
+      - com.github.nginx-proxy.nginx=true 
     restart: unless-stopped
+    networks:
+      - proxy-net-dashboard
+
+  acme-companion:
+    image: nginxproxy/acme-companion
+    container_name: acme-companion-dashboard
+    depends_on:
+      - nginx-proxy
+    environment:
+      # Change this to your real email – used for Let's Encrypt notifications
+      DEFAULT_EMAIL: "${DEFAULT_EMAIL}"
+      NGINX_PROXY_CONTAINER: nginx-proxy 
+    volumes:
+      - nginx-certs:/etc/nginx/certs
+      - acme-data:/etc/acme.sh
+      - nginx-vhost:/etc/nginx/vhost.d
+      - nginx-html:/usr/share/nginx/html
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+    networks:
+      - proxy-net-dashboard
 
 volumes:
-  traefik-letsencrypt:
+  nginx-certs:
+  nginx-vhost:
+  nginx-html:
+  acme-data:
 
 networks:
-  proxy-net:
+  proxy-net-dashboard:
     external: true
